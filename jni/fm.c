@@ -225,6 +225,17 @@ int rds_print()
 	//printf("blerc: %X\n", rdat.blerc);
 	//printf("blerd: %X\n", rdat.blerd);
 
+	char rds_usable[4];
+	//0 = no errors, 1 = some [see data sheet], 2 = more, 3 = uncorrectable
+	//using < 3 still results in corrupted text, so only use 1.
+	rds_usable[0] = (rdat.blera < 2);
+	rds_usable[1] = (rdat.blerb < 2);
+	rds_usable[2] = (rdat.blerc < 2);
+	rds_usable[3] = (rdat.blerd < 2);
+
+	if (!rds_usable[0] || !rds_usable[1])
+		return -1;
+
 	RDSGroupType group_type = upper_byte(rdat.rdsb) >> 3;
 	
     printf("PID: %X\n", rdat.rdsa);
@@ -240,10 +251,14 @@ int rds_print()
 	switch (group_type) {
 		case GROUP_0A:
 		case GROUP_0B:
+			if (!rds_usable[2])
+				return -1;
 			C_bits = lower_byte(rdat.rdsb) & 0x3;
-			
-			service_name[2*C_bits] = upper_byte(rdat.rdsd);
-			service_name[2*C_bits+1] = lower_byte(rdat.rdsd); //this shows the need to ignore errors!
+
+			if (rds_usable[3]) {
+				service_name[2*C_bits] = upper_byte(rdat.rdsd);
+				service_name[2*C_bits+1] = lower_byte(rdat.rdsd);
+			}
 			break;
 		case GROUP_8A:
 			printf("tmc group\n");
