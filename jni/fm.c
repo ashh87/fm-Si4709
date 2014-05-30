@@ -109,6 +109,8 @@ typedef enum {GROUP_0A=0,GROUP_0B,GROUP_1A,GROUP_1B,GROUP_2A,GROUP_2B,
                    GROUP_12A,GROUP_12B,GROUP_13A,GROUP_13B,GROUP_14A,GROUP_14B,
                    GROUP_15A,GROUP_15B,GROUP_UNKNOWN} RDSGroupType;
 
+typedef enum {TMC_GROUP=0, TMC_SINGLE, TMC_SYSTEM, TMC_TUNING} TMCtype;
+
 char group_name [][4] = {"0A ", "0B ", "1A ", "1B ", "2A ", "2B ", "3A ", "3B ",
 						 "4A ", "4B ", "5A ", "5B ", "6A ", "6B ", "7A ", "7B ",
 						 "8A ", "8B ", "9A ", "9B ", "10A", "10B", "11A", "11B",
@@ -118,6 +120,7 @@ char group_name [][4] = {"0A ", "0B ", "1A ", "1B ", "2A ", "2B ", "3A ", "3B ",
 int cur_service;
 int next_service;
 char service_name[9];
+char tmc_service_name[9];
 
 static int radioEnabled = 0;
 static int lastFreq = 0;
@@ -192,6 +195,57 @@ uint8_t upper_byte(uint16_t word)
 	return ((word >> 8) & 0xFF);
 }
 
+void do_tmc(radio_data_t* rdat)
+{
+
+	char rds_usable[4]; //some redundancy here...
+	rds_usable[0] = (rdat->blera < 2); //implied by getting here
+	rds_usable[1] = (rdat->blerb < 2); //same
+	rds_usable[2] = (rdat->blerc < 2);
+	rds_usable[3] = (rdat->blerd < 2);
+
+	TMCtype type = (lower_byte(rdat->rdsb) & 0x18) >> 3;
+	int duration = lower_byte(rdat->rdsb) & 0x07;
+	printf("Type: %X, duration: %d\n", type, duration);
+	switch (type) {
+		case TMC_GROUP:
+			if (duration == 0)
+				printf("Encrypted Service\n");
+			else
+				printf("Unencrypted Service\n");
+			break;
+		case TMC_SYSTEM:
+			switch (duration) {
+				case 4:
+					if (rds_usable[2]) {
+						tmc_service_name[0] = upper_byte(rdat->rdsc);
+						tmc_service_name[1] = lower_byte(rdat->rdsc);
+					}
+					if (rds_usable[3]) {
+						tmc_service_name[2] = upper_byte(rdat->rdsd);
+						tmc_service_name[3] = lower_byte(rdat->rdsd);
+					}
+					break;
+				case 5:
+					if (rds_usable[2]) {
+						tmc_service_name[4] = upper_byte(rdat->rdsc);
+						tmc_service_name[5] = lower_byte(rdat->rdsc);
+					}
+					if (rds_usable[3]) {
+						tmc_service_name[6] = upper_byte(rdat->rdsd);
+						tmc_service_name[7] = lower_byte(rdat->rdsd);
+					}
+					break;
+				default:
+					break;
+			}
+			break;
+		default:
+			break;
+	}
+	printf("provider = %s\n", tmc_service_name);
+}
+
 int rds_print()
 {
   //printf("RDS Get...\n");
@@ -228,10 +282,10 @@ int rds_print()
 	char rds_usable[4];
 	//0 = no errors, 1 = some [see data sheet], 2 = more, 3 = uncorrectable
 	//using < 3 still results in corrupted text, so only use 1.
-	rds_usable[0] = (rdat.blera < 2);
-	rds_usable[1] = (rdat.blerb < 2);
-	rds_usable[2] = (rdat.blerc < 2);
-	rds_usable[3] = (rdat.blerd < 2);
+	rds_usable[0] = (rdat.blera < 1);
+	rds_usable[1] = (rdat.blerb < 1);
+	rds_usable[2] = (rdat.blerc < 1);
+	rds_usable[3] = (rdat.blerd < 1);
 
 	if (!rds_usable[0] || !rds_usable[1])
 		return -1;
@@ -260,7 +314,10 @@ int rds_print()
 				service_name[2*C_bits+1] = lower_byte(rdat.rdsd);
 			}
 			break;
+		case GROUP_3A:
+			break;
 		case GROUP_8A:
+			do_tmc(&rdat);
 			printf("tmc group\n");
 			break;
 		default:
